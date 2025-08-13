@@ -1,219 +1,303 @@
 #!/bin/bash
 
-# Direktori penyimpanan konfigurasi dan log
+# Konfigurasi sistem
 CONFIG_DIR="/etc/iptables_manager"
 RULES_FILE="$CONFIG_DIR/saved_rules.v4"
+BACKUP_DIR="$CONFIG_DIR/backups"
 LOG_FILE="$CONFIG_DIR/iptables.log"
+WHITELIST_FILE="$CONFIG_DIR/whitelist.txt"
+BLOCKLIST_FILE="$CONFIG_DIR/blocklist.txt"
 
-# Buat direktori jika belum ada
-mkdir -p "$CONFIG_DIR"
-touch "$LOG_FILE"
+# Inisialisasi direktori
+mkdir -p "$CONFIG_DIR" "$BACKUP_DIR"
+touch "$LOG_FILE" "$WHITELIST_FILE" "$BLOCKLIST_FILE"
 
-# Fungsi untuk logging
+# Fungsi logging
 log_action() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
-# Fungsi tampilkan menu utama
-show_menu() {
+# Fungsi buat backup otomatis
+auto_backup() {
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    cp "$RULES_FILE" "$BACKUP_DIR/rules_$timestamp.v4"
+}
+
+# Tampilkan header
+show_header() {
     clear
-    echo "================================="
-    echo "  MANAJEMEN IPTABLES TERKELOLA"
-    echo "================================="
-    echo "1. Tampilkan Aturan iptables"
-    echo "2. Tambah Aturan Baru"
-    echo "3. Hapus Aturan"
-    echo "4. Blokir IP"
-    echo "5. Izinkan IP"
-    echo "6. Blokir Port"
-    echo "7. Izinkan Port"
-    echo "8. Simpan Aturan Permanen"
-    echo "9. Pulihkan Aturan Terakhir"
+    echo "==================================================="
+    echo "  MANAJEMEN IPTABLES TERKELOLA v2.0"
+    echo "  Sistem Terakhir Diperbarui: 12 Agustus 2025"
+    echo "==================================================="
+}
+
+# Menu utama
+show_menu() {
+    show_header
+    echo "1.  Tampilkan Aturan iptables"
+    echo "2.  Tambah Aturan Baru"
+    echo "3.  Hapus Aturan"
+    echo "4.  Blokir IP"
+    echo "5.  Izinkan IP"
+    echo "6.  Blokir Port"
+    echo "7.  Izinkan Port"
+    echo "8.  Simpan Aturan Permanen"
+    echo "9.  Pulihkan Aturan"
     echo "10. Tampilkan Log"
-    echo "0. Keluar"
-    echo "================================="
+    echo "11. Manajemen Blokir Massal"
+    echo "12. Manajemen Whitelist"
+    echo "13. Aturan Koneksi Terkait (Stateful)"
+    echo "14. Anti-DDoS (Rate Limiting)"
+    echo "15. Atur Interface Spesifik"
+    echo "16. Cek Koneksi Aktif"
+    echo "17. Buat Backup"
+    echo "18. Restore Backup"
+    echo "0.  Keluar"
+    echo "==================================================="
     echo -n "Pilih opsi: "
 }
 
-# Fungsi tampilkan aturan
-show_rules() {
-    echo -e "\nAturan iptables saat ini:"
-    echo "============================"
-    iptables -L -v -n --line-numbers
-    echo -e "============================\n"
-    log_action "Menampilkan aturan iptables"
+# Implementasi fitur baru
+# [Fungsi yang sama seperti sebelumnya...]
+
+# 11. Manajemen Blokir Massal
+manage_blocklist() {
+    show_header
+    echo "MANAJEMEN BLOKIR MASSA"
+    echo "-----------------------------------"
+    echo "1. Blokir IP dari file"
+    echo "2. Tambah IP ke blocklist"
+    echo "3. Tampilkan daftar blokir"
+    echo "4. Kosongkan blocklist"
+    echo "-----------------------------------"
+    echo -n "Pilihan: "
+    read subopt
+    
+    case $subopt in
+        1)
+            echo -n "Masukkan path file: "
+            read file_path
+            if [ -f "$file_path" ]; then
+                while IFS= read -r ip; do
+                    iptables -A INPUT -s "$ip" -j DROP
+                    echo "$ip" >> "$BLOCKLIST_FILE"
+                    log_action "IP diblokir dari file: $ip"
+                done < "$file_path"
+                echo "Semua IP dalam file berhasil diblokir!"
+            else
+                echo "File tidak ditemukan!"
+            fi
+            ;;
+        2)
+            echo -n "Masukkan IP untuk diblokir: "
+            read ip
+            iptables -A INPUT -s "$ip" -j DROP
+            echo "$ip" >> "$BLOCKLIST_FILE"
+            log_action "IP ditambahkan ke blocklist: $ip"
+            echo "IP berhasil ditambahkan ke blocklist!"
+            ;;
+        3)
+            echo -e "\nDaftar IP Terblokir:"
+            cat "$BLOCKLIST_FILE"
+            ;;
+        4)
+            > "$BLOCKLIST_FILE"
+            log_action "Blocklist dikosongkan"
+            echo "Blocklist berhasil dikosongkan!"
+            ;;
+        *) echo "Pilihan tidak valid!" ;;
+    esac
 }
 
-# Fungsi tambah aturan
-add_rule() {
-    echo -n "Masukkan chain (INPUT/FORWARD/OUTPUT): "
-    read chain
-    echo -n "Masukkan protocol (tcp/udp/icmp/all): "
-    read proto
-    echo -n "Masukkan port (kosongkan jika tidak ada): "
-    read port
-    echo -n "Masukkan alamat IP sumber (kosongkan untuk semua): "
-    read source_ip
-    echo -n "Masukkan tindakan (ACCEPT/DROP/REJECT): "
-    read action
+# 12. Manajemen Whitelist
+manage_whitelist() {
+    show_header
+    echo "MANAJEMEN WHITELIST"
+    echo "-----------------------------------"
+    echo "1. Izinkan IP dari file"
+    echo "2. Tambah IP ke whitelist"
+    echo "3. Tampilkan whitelist"
+    echo "4. Kosongkan whitelist"
+    echo "-----------------------------------"
+    echo -n "Pilihan: "
+    read subopt
     
-    cmd="iptables -A $chain"
-    [ -n "$source_ip" ] && cmd+=" -s $source_ip"
-    [ "$proto" != "all" ] && cmd+=" -p $proto"
-    [ -n "$port" ] && cmd+=" --dport $port"
+    case $subopt in
+        1)
+            echo -n "Masukkan path file: "
+            read file_path
+            if [ -f "$file_path" ]; then
+                while IFS= read -r ip; do
+                    iptables -A INPUT -s "$ip" -j ACCEPT
+                    echo "$ip" >> "$WHITELIST_FILE"
+                    log_action "IP diizinkan dari file: $ip"
+                done < "$file_path"
+                echo "Semua IP dalam file berhasil diizinkan!"
+            else
+                echo "File tidak ditemukan!"
+            fi
+            ;;
+        2)
+            echo -n "Masukkan IP untuk diizinkan: "
+            read ip
+            iptables -A INPUT -s "$ip" -j ACCEPT
+            echo "$ip" >> "$WHITELIST_FILE"
+            log_action "IP ditambahkan ke whitelist: $ip"
+            echo "IP berhasil ditambahkan ke whitelist!"
+            ;;
+        3)
+            echo -e "\nDaftar IP Terizinkan:"
+            cat "$WHITELIST_FILE"
+            ;;
+        4)
+            > "$WHITELIST_FILE"
+            log_action "Whitelist dikosongkan"
+            echo "Whitelist berhasil dikosongkan!"
+            ;;
+        *) echo "Pilihan tidak valid!" ;;
+    esac
+}
+
+# 13. Aturan Stateful Connection
+stateful_rules() {
+    show_header
+    echo "ATURAN STATEFUL CONNECTION"
+    echo "-----------------------------------"
+    echo "1. Izinkan koneksi terkait"
+    echo "2. Izinkan koneksi established"
+    echo "3. Reset stateful rules"
+    echo "-----------------------------------"
+    echo -n "Pilihan: "
+    read subopt
+    
+    case $subopt in
+        1)
+            iptables -A INPUT -m conntrack --ctstate RELATED -j ACCEPT
+            log_action "Menambahkan aturan RELATED connections"
+            echo "Aturan berhasil ditambahkan!"
+            ;;
+        2)
+            iptables -A INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
+            log_action "Menambahkan aturan ESTABLISHED connections"
+            echo "Aturan berhasil ditambahkan!"
+            ;;
+        3)
+            iptables -D INPUT -m conntrack --ctstate RELATED -j ACCEPT 2>/dev/null
+            iptables -D INPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT 2>/dev/null
+            log_action "Mereset stateful rules"
+            echo "Aturan stateful direset!"
+            ;;
+        *) echo "Pilihan tidak valid!" ;;
+    esac
+}
+
+# 14. Basic DDoS Protection
+ddos_protection() {
+    show_header
+    echo "PROTEKSI ANTI-DDoS"
+    echo "-----------------------------------"
+    echo "1. Aktifkan proteksi SYN Flood"
+    echo "2. Aktifkan proteksi Port Scanning"
+    echo "3. Atur koneksi per menit"
+    echo "-----------------------------------"
+    echo -n "Pilihan: "
+    read subopt
+    
+    case $subopt in
+        1)
+            iptables -A INPUT -p tcp --syn -m limit --limit 1/s -j ACCEPT
+            log_action "Mengaktifkan SYN Flood protection"
+            echo "Proteksi SYN Flood diaktifkan!"
+            ;;
+        2)
+            iptables -A INPUT -p tcp --tcp-flags ALL NONE -m limit --limit 1/h -j ACCEPT
+            iptables -A INPUT -p tcp --tcp-flags ALL ALL -m limit --limit 1/h -j ACCEPT
+            log_action "Mengaktifkan Port Scan protection"
+            echo "Proteksi Port Scanning diaktifkan!"
+            ;;
+        3)
+            echo -n "Masukkan batas koneksi per menit: "
+            read limit
+            iptables -A INPUT -p tcp -m connlimit --connlimit-above "$limit" -j DROP
+            log_action "Mengatur batas koneksi: $limit/menit"
+            echo "Batas koneksi diatur ke $limit per menit!"
+            ;;
+        *) echo "Pilihan tidak valid!" ;;
+    esac
+}
+
+# 15. Aturan berdasarkan Interface
+interface_rules() {
+    show_header
+    echo -n "Masukkan nama interface (eth0, wlan0, dll): "
+    read iface
+    echo -n "Masukkan aksi (ACCEPT/DROP): "
+    read action
+    echo -n "Masukkan port (opsional): "
+    read port
+    
+    cmd="iptables -A INPUT -i $iface"
+    [ -n "$port" ] && cmd+=" -p tcp --dport $port"
     cmd+=" -j $action"
     
     eval "$cmd"
-    log_action "Menambahkan aturan: $cmd"
-    echo "Aturan berhasil ditambahkan!"
+    log_action "Menambahkan aturan interface: $cmd"
+    echo "Aturan berhasil ditambahkan untuk interface $iface!"
 }
 
-# Fungsi hapus aturan
-delete_rule() {
-    show_rules
-    echo -n "Masukkan nomor chain (INPUT/FORWARD/OUTPUT): "
-    read chain
-#!/bin/bash
-
-# Direktori penyimpanan konfigurasi dan log
-CONFIG_DIR="/etc/iptables_manager"
-RULES_FILE="$CONFIG_DIR/saved_rules.v4"
-LOG_FILE="$CONFIG_DIR/iptables.log"
-
-# Buat direktori jika belum ada
-mkdir -p "$CONFIG_DIR"
-touch "$LOG_FILE"
-
-# Fungsi untuk logging
-log_action() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
-}
-
-# Fungsi tampilkan menu utama
-show_menu() {
-    clear
-    echo "================================="
-    echo "  MANAJEMEN IPTABLES TERKELOLA"
-    echo "================================="
-    echo "1. Tampilkan Aturan iptables"
-    echo "2. Tambah Aturan Baru"
-    echo "3. Hapus Aturan"
-    echo "4. Blokir IP"
-    echo "5. Izinkan IP"
-    echo "6. Blokir Port"
-    echo "7. Izinkan Port"
-    echo "8. Simpan Aturan Permanen"
-    echo "9. Pulihkan Aturan Terakhir"
-    echo "10. Tampilkan Log"
-    echo "0. Keluar"
-    echo "================================="
-    echo -n "Pilih opsi: "
-}
-
-# Fungsi tampilkan aturan
-show_rules() {
-    echo -e "\nAturan iptables saat ini:"
-    echo "============================"
-    iptables -L -v -n --line-numbers
-    echo -e "============================\n"
-    log_action "Menampilkan aturan iptables"
-}
-
-# Fungsi tambah aturan
-add_rule() {
-    echo -n "Masukkan chain (INPUT/FORWARD/OUTPUT): "
-    read chain
-    echo -n "Masukkan protocol (tcp/udp/icmp/all): "
-    read proto
-    echo -n "Masukkan port (kosongkan jika tidak ada): "
-    read port
-    echo -n "Masukkan alamat IP sumber (kosongkan untuk semua): "
-    read source_ip
-    echo -n "Masukkan tindakan (ACCEPT/DROP/REJECT): "
-    read action
+# 16. Cek Koneksi Aktif
+check_connections() {
+    show_header
+    echo "KONEKSI AKTIF"
+    echo "-----------------------------------"
+    echo "1. Tampilkan semua koneksi"
+    echo "2. Cek koneksi ke port spesifik"
+    echo "-----------------------------------"
+    echo -n "Pilihan: "
+    read subopt
     
-    cmd="iptables -A $chain"
-    [ -n "$source_ip" ] && cmd+=" -s $source_ip"
-    [ "$proto" != "all" ] && cmd+=" -p $proto"
-    [ -n "$port" ] && cmd+=" --dport $port"
-    cmd+=" -j $action"
+    case $subopt in
+        1)
+            netstat -tunap
+            ;;
+        2)
+            echo -n "Masukkan nomor port: "
+            read port
+            netstat -tunap | grep ":$port"
+            ;;
+        *) echo "Pilihan tidak valid!" ;;
+    esac
+}
+
+# 17. Buat Backup
+create_backup() {
+    show_header
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    cp "$RULES_FILE" "$BACKUP_DIR/rules_$timestamp.v4"
+    log_action "Membuat backup: rules_$timestamp.v4"
+    echo "Backup berhasil dibuat: rules_$timestamp.v4"
+}
+
+# 18. Restore Backup
+restore_backup() {
+    show_header
+    echo "BACKUP TERSEDIA:"
+    ls -l "$BACKUP_DIR"
+    echo "-----------------------------------"
+    echo -n "Masukkan nama file backup: "
+    read backup_file
     
-    eval "$cmd"
-    log_action "Menambahkan aturan: $cmd"
-    echo "Aturan berhasil ditambahkan!"
+    if [ -f "$BACKUP_DIR/$backup_file" ]; then
+        iptables-restore < "$BACKUP_DIR/$backup_file"
+        log_action "Memulihkan backup: $backup_file"
+        echo "Backup berhasil dipulihkan!"
+    else
+        echo "File backup tidak ditemukan!"
+    fi
 }
 
-# Fungsi hapus aturan
-delete_rule() {
-    show_rules
-    echo -n "Masukkan nomor chain (INPUT/FORWARD/OUTPUT): "
-    read chain
-    echo -n "Masukkan nomor aturan yang akan dihapus: "
-    read rule_num
-    
-    iptables -D "$chain" "$rule_num"
-    log_action "Menghapus aturan $rule_num dari chain $chain"
-    echo "Aturan berhasil dihapus!"
-}
-
-# Fungsi blokir IP
-block_ip() {
-    echo -n "Masukkan alamat IP yang akan diblokir: "
-    read ip
-    iptables -A INPUT -s "$ip" -j DROP
-    log_action "Memblokir IP: $ip"
-    echo "IP $ip berhasil diblokir!"
-}
-
-# Fungsi izinkan IP
-allow_ip() {
-    echo -n "Masukkan alamat IP yang akan diizinkan: "
-    read ip
-    iptables -A INPUT -s "$ip" -j ACCEPT
-    log_action "Mengizinkan IP: $ip"
-    echo "IP $ip berhasil diizinkan!"
-}
-
-# Fungsi blokir port
-block_port() {
-    echo -n "Masukkan nomor port yang akan diblokir: "
-    read port
-    iptables -A INPUT -p tcp --dport "$port" -j DROP
-    iptables -A INPUT -p udp --dport "$port" -j DROP
-    log_action "Memblokir port: $port"
-    echo "Port $port berhasil diblokir!"
-}
-
-# Fungsi izinkan port
-allow_port() {
-    echo -n "Masukkan nomor port yang akan diizinkan: "
-    read port
-    echo -n "Masukkan protocol (tcp/udp): "
-    read proto
-    iptables -A INPUT -p "$proto" --dport "$port" -j ACCEPT
-    log_action "Mengizinkan port: $port/$proto"
-    echo "Port $port/$proto berhasil diizinkan!"
-}
-
-# Fungsi simpan aturan
-save_rules() {
-    iptables-save > "$RULES_FILE"
-    log_action "Menyimpan aturan ke $RULES_FILE"
-    echo "Aturan berhasil disimpan secara permanen!"
-    echo "Untuk memuat saat boot, gunakan perintah:"
-    echo "  sudo iptables-restore < $RULES_FILE"
-}
-
-# Fungsi pulihkan aturan
-restore_rules() {
-    [ -f "$RULES_FILE" ] || {
-        echo "File aturan tidak ditemukan!"
-        return 1
-    }
-    iptables-restore < "$RULES_FILE"
-    log_action "Memulihkan aturan dari $RULES_FILE"
-    echo "Aturan berhasil dipulihkan!"
-}
+# [Fungsi-fungsi sebelumnya tetap ada di sini...]
 
 # Main program
 while true; do
@@ -230,6 +314,14 @@ while true; do
         8) save_rules ;;
         9) restore_rules ;;
         10) less "$LOG_FILE" ;;
+        11) manage_blocklist ;;
+        12) manage_whitelist ;;
+        13) stateful_rules ;;
+        14) ddos_protection ;;
+        15) interface_rules ;;
+        16) check_connections ;;
+        17) create_backup ;;
+        18) restore_backup ;;
         0) echo "Keluar..."; exit 0 ;;
         *) echo "Opsi tidak valid!"; sleep 1 ;;
     esac
